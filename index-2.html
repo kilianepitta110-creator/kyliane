@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Kyliane pirate tes photos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Rubik:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--sea:#0e3b43;--deep:#062126;--gold:#f2b632;--coral:#e4572e;--foam:#eaf6f3;--soft:rgba(234,246,243,.1);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 50% 0,var(--sea),var(--deep));color:var(--foam);font:400 17px/1.4 Rubik,system-ui,sans-serif}
+main{max-width:460px;margin:0 auto;padding:22px 20px 44px}
+h1,h2,.code{font-family:"Pirata One",Georgia,serif;font-weight:400}
+h1{font-size:clamp(40px,12vw,58px);line-height:.95;color:var(--gold);margin:6px 0 12px}
+h2{font-size:28px;line-height:1.1;margin:18px 0 12px}
+.lead{margin:0 0 20px;opacity:.9}
+.card{border:2px dashed rgba(242,182,50,.55);border-radius:16px;padding:16px;display:grid;gap:10px}
+label{font-size:15px;opacity:.9}
+input[type=text]{width:100%;font:inherit;padding:13px 14px;border-radius:10px;border:0;background:var(--foam);color:var(--deep)}
+#code{text-transform:uppercase;letter-spacing:.3em;text-align:center}
+.btn{display:block;width:100%;font:600 17px/1 Rubik,system-ui,sans-serif;text-align:center;padding:15px;border-radius:10px;border:0;cursor:pointer;background:var(--foam);color:var(--deep)}
+.btn.gold{background:var(--gold)}.btn.ghost{background:none;border:2px solid var(--gold);color:var(--gold)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn+.btn{margin-top:10px}
+input:focus-visible,.btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.meta,.note,.err{font-size:14px;opacity:.85;margin:4px 0}.err{color:var(--gold);min-height:1.2em}
+.code{font-size:72px;letter-spacing:.12em;text-align:center;color:var(--gold);line-height:1;margin:6px 0 14px}
+.plist{list-style:none;padding:0;margin:16px 0;display:grid;gap:8px}
+.plist li{display:flex;gap:8px;background:var(--soft);padding:10px 12px;border-radius:10px;font-weight:600}
+.plist span{margin-left:auto;font-weight:400;opacity:.8}
+.polaroid{background:#fff;padding:12px 12px 46px;border-radius:5px;box-shadow:0 14px 30px rgba(0,0,0,.5);transform:rotate(-2deg);animation:drop .5s cubic-bezier(.2,1.4,.4,1)}
+.polaroid img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;background:#ccc}
+@keyframes drop{from{transform:translateY(-60px) rotate(6deg);opacity:0}}
+@media (prefers-reduced-motion:reduce){.polaroid{animation:none}}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}.opts .btn+.btn{margin:0}
+.win{color:var(--gold)}
+.rank{list-style:none;padding:0;margin:0 0 16px;display:grid;gap:8px}
+.rank li{display:flex;justify-content:space-between;background:var(--soft);padding:12px 14px;border-radius:10px;font-weight:600}
+.rank li:first-child{background:var(--gold);color:var(--deep);font-size:20px}
+</style></head><body><main id="app"></main>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+// 1) Colle ici la configuration de ton projet Firebase (Paramètres du projet > Tes applications > Web)
+const CFG={apiKey:"AIzaSyBxfpGaYCtTOxWv51AkWaLJTt37GFYidQQ",authDomain:"kiliane-pirate-tes-photos.firebaseapp.com",databaseURL:"https://kiliane-pirate-tes-photos-default-rtdb.europe-west1.firebasedatabase.app",projectId:"kiliane-pirate-tes-photos",appId:"1:290289372117:web:a7c75cda6cfc9355374b5c"};
+
+const app=document.getElementById('app');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const polaroid=src=>src?`<div class="polaroid"><img src="${src}" alt="Photo à deviner"></div>`:'';
+let pid;try{pid=localStorage.kp_pid||(localStorage.kp_pid=Math.random().toString(36).slice(2,10))}catch(e){pid=Math.random().toString(36).slice(2,10)}
+let db,ref,S={};
+
+function shrink(file){return new Promise(res=>{const img=new Image(),u=URL.createObjectURL(file);
+ img.onload=()=>{const k=Math.min(1,560/Math.max(img.width,img.height)),c=document.createElement('canvas');
+ c.width=img.width*k;c.height=img.height*k;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+ URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',.6))};img.onerror=()=>res(null);img.src=u})}
+
+function home(msg=''){
+ if(ref)ref.off();ref=null;S={};
+ const pre=(location.hash||'').slice(1).toUpperCase().slice(0,4);
+ app.innerHTML=`<h1>Kyliane pirate tes photos</h1>
+ <p class="lead">Chacun met ses photos dans le coffre. Kyliane les pirate, à vous de retrouver à qui elles appartiennent.</p>
+ <section class="card"><label for="nm">Ton prénom</label><input type="text" id="nm" maxlength="16" autocomplete="off">
+ <label for="code">Code de la partie</label><input type="text" id="code" maxlength="4" autocomplete="off" value="${pre}">
+ <p class="err" id="err">${msg}</p>
+ <button class="btn gold" id="join">Rejoindre avec le code</button>
+ <button class="btn ghost" id="create">Créer une partie</button></section>`;
+ const err=t=>document.getElementById('err').textContent=t,name=()=>document.getElementById('nm').value.trim();
+ document.getElementById('create').onclick=async()=>{
+  if(!name())return err('Écris ton prénom.');
+  const L='ABCDEFGHJKLMNPQRSTUVWXYZ';let c='';for(let k=0;k<4;k++)c+=L[Math.floor(Math.random()*L.length)];
+  await db.ref('rooms/'+c+'/meta').set({host:pid,state:'lobby',round:0});enter(c,name())};
+ document.getElementById('join').onclick=async()=>{
+  const c=document.getElementById('code').value.trim().toUpperCase();
+  if(!name())return err('Écris ton prénom.');
+  if(c.length!=4)return err('Le code a 4 lettres.');
+  const m=(await db.ref('rooms/'+c+'/meta').once('value')).val();
+  if(!m)return err('Aucune partie avec ce code.');
+  if(m.state!='lobby')return err('Cette partie a déjà commencé.');
+  enter(c,name())};
+}
+
+async function enter(code,name){
+ ref=db.ref('rooms/'+code);S={code,photos:null,players:{},votes:{}};
+ const me=(await ref.child('players/'+pid).once('value')).val();
+ await ref.child('players/'+pid).set(me?{...me,name}:{name,n:0,score:0});
+ history.replaceState(null,'','#'+code);
+ ref.child('meta').on('value',s=>{S.meta=s.val();S.meta?render():home('La partie est terminée.')});
+ ref.child('players').on('value',s=>{S.players=s.val()||{};render()});
+ ref.child('votes').on('value',s=>{S.votes=s.val()||{};render()});
+}
+
+function render(){
+ if(!S.meta||!S.players)return;
+ ({lobby,play,reveal:revealScreen,end})[S.meta.state]?.();
+}
+const isHost=()=>S.meta.host==pid;
+const nm=p=>esc((S.players[p]||{}).name||'?');
+
+function lobby(){
+ const ps=Object.entries(S.players),mine=(S.players[pid]||{}).n||0,ready=ps.filter(([,p])=>p.n>0).length;
+ app.innerHTML=`<p class="meta">Code de la partie</p><div class="code">${S.code}</div>
+ <button class="btn ghost" id="share">Inviter par WhatsApp</button>
+ <section class="card" style="margin-top:14px"><label class="btn ghost" for="ph">${mine?'Changer mes photos ('+mine+')':'Choisir mes photos (6 max)'}</label>
+ <input id="ph" type="file" accept="image/*" multiple hidden><p class="note" id="st">Tes photos seront visibles par les autres joueurs pendant la partie, puis effacées.</p></section>
+ <ul class="plist">${ps.map(([,p])=>`<li>${esc(p.name)}<span>${p.n?p.n+' photos':'pas encore de photos'}</span></li>`).join('')}</ul>
+ ${isHost()?`<button class="btn gold" id="go" ${ready<2?'disabled':''}>Lancer la partie</button><p class="note">Il faut au moins 2 joueurs avec des photos.</p>`:'<p class="note">On attend que l\'hôte lance la partie…</p>'}`;
+ document.getElementById('share').onclick=()=>window.open('https://wa.me/?text='+encodeURIComponent(`Rejoins ma partie « Kyliane pirate tes photos » : ${location.href.split('#')[0]}#${S.code} (code ${S.code})`));
+ document.getElementById('ph').onchange=async e=>{
+  const st=document.getElementById('st');st.textContent='Chargement des photos…';
+  const imgs=(await Promise.all([...e.target.files].slice(0,6).map(shrink))).filter(Boolean);
+  if(!imgs.length){st.textContent='Aucune photo lue.';return}
+  await ref.child('photos/'+pid).set(imgs);await ref.child('players/'+pid+'/n').set(imgs.length)};
+ const go=document.getElementById('go');
+ if(go)go.onclick=async()=>{
+  const ph=(await ref.child('photos').once('value')).val()||{},deck=[];
+  Object.entries(ph).forEach(([p,a])=>Object.keys(a).forEach(k=>deck.push({p,k:+k})));
+  for(let k=deck.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[deck[k],deck[j]]=[deck[j],deck[k]]}
+  await ref.child('meta').update({deck,state:'play',round:0})};
+}
+
+function loadPhotos(){
+ if(S.photos||S.loading)return;S.loading=1;
+ ref.child('photos').once('value').then(s=>{S.photos=s.val()||{};render()});
+}
+function cur(){const m=S.meta;return {d:m.deck[m.round],v:S.votes[m.round]||{}}}
+
+function play(){
+ loadPhotos();
+ const m=S.meta,{d,v}=cur(),n=Object.keys(S.players).length,got=Object.keys(v).length;
+ if(!S.photos){app.innerHTML='<p class="lead">Chargement du coffre…</p>';return}
+ const src=(S.photos[d.p]||[])[d.k],owner=d.p==pid,voted=v[pid]!=null;
+ app.innerHTML=`<p class="meta">Photo ${m.round+1} sur ${m.deck.length} · ${got}/${n-1} votes</p>${polaroid(src)}
+ ${owner?'<h2>C\'est ta photo. Garde ton visage de pirate.</h2>'
+  :voted?'<h2>Vote envoyé. On attend les autres…</h2>'
+  :`<h2>C'est la galerie de qui&nbsp;?</h2><div class="opts">${Object.entries(S.players).filter(([p])=>p!=pid).map(([p,x])=>`<button class="btn" data-p="${p}">${esc(x.name)}</button>`).join('')}</div>`}
+ ${isHost()?'<button class="btn ghost" id="rv" style="margin-top:14px">Révéler maintenant</button>':''}`;
+ app.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>ref.child('votes/'+m.round+'/'+pid).set(b.dataset.p));
+ const rv=document.getElementById('rv');if(rv)rv.onclick=doReveal;
+ if(isHost()&&got>=n-1&&S.rv!==m.round){S.rv=m.round;doReveal()}
+}
+
+function doReveal(){
+ const m=S.meta,{d,v}=cur(),u={'meta/state':'reveal'};
+ Object.entries(v).forEach(([who,g])=>{if(g==d.p&&S.players[who])u['players/'+who+'/score']=(S.players[who].score||0)+1});
+ ref.update(u);
+}
+
+function revealScreen(){
+ const m=S.meta,{d,v}=cur(),right=Object.entries(v).filter(([,g])=>g==d.p).map(([w])=>nm(w)),last=m.round>=m.deck.length-1;
+ app.innerHTML=`${polaroid(((S.photos||{})[d.p]||[])[d.k])}
+ <h2>C'était la galerie de <span class="win">${nm(d.p)}</span></h2>
+ <p>${right.length?right.join(', ')+' : +1 point':'Personne n\'a trouvé.'}</p>
+ ${isHost()?`<button class="btn gold" id="nx">${last?'Voir le classement':'Photo suivante'}</button>`:'<p class="note">L\'hôte lance la suite…</p>'}`;
+ const nx=document.getElementById('nx');
+ if(nx)nx.onclick=()=>last?ref.update({'meta/state':'end',photos:null}):ref.child('meta').update({round:m.round+1,state:'play'});
+}
+
+function end(){
+ const r=Object.values(S.players).sort((a,b)=>(b.score||0)-(a.score||0));
+ app.innerHTML=`<h1>Classement</h1><ol class="rank">${r.map(p=>`<li><span>${esc(p.name)}</span><span>${p.score||0} pt${p.score>1?'s':''}</span></li>`).join('')}</ol>
+ <p class="note">Les photos ont été effacées du serveur.</p>
+ <button class="btn gold" id="nw">${isHost()?'Terminer pour tout le monde':'Quitter'}</button>`;
+ document.getElementById('nw').onclick=async()=>{if(isHost())await ref.remove();history.replaceState(null,'','#');home()};
+}
+
+if(CFG.apiKey.startsWith('COLLE')){
+ app.innerHTML='<h1>Presque prêt</h1><p class="lead">Ouvre ce fichier dans un éditeur de texte et colle la configuration Firebase de ton projet à la place de <b>CFG</b>, tout en haut du script.</p>';
+}else{firebase.initializeApp(CFG);db=firebase.database();home()}
+</script></body></html>
